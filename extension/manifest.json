@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "ACP Chat",
+  "version": "0.1.0",
+  "description": "Chat with ACP CLI harnesses (kiro-cli, Claude Code, Codex, pi, Kimi...) from a panel on any web page.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAz93SsZXGzUzVOpiDlDELJOCGcvi2hQpIyyuOs8N7LKM2ID9jDrxRtQUqKkTe0cARWWpLYhCah75WKZt1VQPaqmcxuC3+uPi3AyUBGb53+xUBO1QeA7b6ytdKKDqCYugluH6bG7bohhXhMuaP2h0Ye9d7HOJ51a+b31Rq/me1GU+2XchDMWs00SziK9paJ5zsiKfGv+Vfq82+rgVOwYyrqeIR2eHVtG4G8je43c/Z0C0ix7mTVbQBITGU+XFRfTgCnp/PNdZKdP88HtFXBWkXXx7RtpF+YhyAOFWZM7GnhQNbn4vQVfeaZYTDwVC48ZL5FoJVsDPgmAxXbQZyvtosowIDAQAB",
+  "minimum_chrome_version": "116",
+  "permissions": ["nativeMessaging", "storage", "scripting", "activeTab"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Toggle ACP Chat on this tab"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.google.com/*", "https://google.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["panel.html"],
+      "matches": ["<all_urls>"],
+      "use_dynamic_url": true
+    }
+  ]
+}

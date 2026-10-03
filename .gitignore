@@ -1,0 +1,8 @@
+node_modules/
+extension/dist/
+extension/vendor/
+host/acp-chat-host
+*.log
+.DS_Store
+test/
+docs/*.png

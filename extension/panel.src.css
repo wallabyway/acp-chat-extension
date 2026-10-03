@@ -1,0 +1,42 @@
+@import "tailwindcss";
+@source "./panel.html";
+@source "./panel.js";
+
+[x-cloak] { display: none !important; }
+
+@layer components {
+  .icon-btn {
+    @apply grid h-8 min-w-8 place-items-center rounded-md px-1 text-sm text-slate-500 hover:bg-slate-200 hover:text-slate-800 focus-visible:outline-2 focus-visible:outline-indigo-500;
+  }
+  .icon-btn[aria-pressed="true"] { @apply bg-slate-200 text-slate-800; }
+  .field {
+    @apply rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:bg-slate-100 disabled:text-slate-400;
+  }
+  .btn-primary {
+    @apply rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-danger {
+    @apply rounded-md bg-rose-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-rose-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500;
+  }
+}
+
+/* Rendered markdown inside chat bubbles */
+.md > * + * { margin-top: 0.5rem; }
+.md h1, .md h2, .md h3 { font-weight: 600; line-height: 1.3; }
+.md h1 { font-size: 1.15rem; }
+.md h2 { font-size: 1.05rem; }
+.md h3, .md h4, .md h5, .md h6 { font-size: 0.95rem; }
+.md ul { list-style: disc; padding-left: 1.25rem; }
+.md ol { list-style: decimal; padding-left: 1.25rem; }
+.md a { color: var(--color-indigo-600); text-decoration: underline; }
+.md blockquote { border-left: 3px solid var(--color-slate-300); padding-left: 0.75rem; color: var(--color-slate-600); }
+.md hr { border-color: var(--color-slate-300); }
+.md pre {
+  background: var(--color-slate-900); color: var(--color-slate-100);
+  border-radius: 0.5rem; padding: 0.6rem 0.75rem; overflow-x: auto;
+  font-family: var(--font-mono); font-size: 0.75rem; line-height: 1.5;
+}
+.md .md-code {
+  background: var(--color-slate-200); border-radius: 0.25rem; padding: 0.05rem 0.3rem;
+  font-family: var(--font-mono); font-size: 0.8em;
+}

@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ACP Chat</title>
+  <link rel="stylesheet" href="dist/panel.css" />
+  <script type="module" src="panel.js"></script>
+</head>
+<body class="h-screen overflow-hidden bg-white text-slate-800 antialiased">
+  <div x-data="chat" class="flex h-full flex-col" x-cloak>
+
+    <!-- Header -->
+    <header class="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2">
+      <span class="h-2.5 w-2.5 shrink-0 rounded-full" :class="statusDot()" aria-hidden="true"></span>
+      <div class="min-w-0 flex-1">
+        <h1 class="truncate text-sm font-semibold" x-text="agentName || 'ACP Chat'"></h1>
+        <p class="truncate text-xs text-slate-500" x-text="isConnected() ? sessionCwd : statusLabel()" role="status" aria-live="polite"></p>
+      </div>
+      <button type="button" class="icon-btn" @click="toggleThoughts" :aria-pressed="showThoughts" title="Show/hide agent thoughts" aria-label="Toggle agent thoughts">💭</button>
+      <button type="button" class="icon-btn" @click="toggleLogs" :aria-pressed="showLogs" title="Show harness logs" aria-label="Toggle logs">⌘</button>
+      <button type="button" class="icon-btn" @click="clearChat" title="Clear transcript" aria-label="Clear transcript">⌫</button>
+      <template x-if="embedded">
+        <button type="button" class="icon-btn w-8 font-mono font-bold" data-testid="size-toggle" @click="cycleSize" :title="sizeTitle()" :aria-label="sizeTitle()" x-text="sizeLabel()"></button>
+      </template>
+      <template x-if="embedded">
+        <button type="button" class="icon-btn" @click="close" title="Close (Esc)" aria-label="Close chat">✕</button>
+      </template>
+    </header>
+
+    <!-- Connection bar -->
+    <section class="border-b border-slate-200 px-3 py-2" x-show="!isConnected()">
+      <div class="flex gap-2">
+        <label class="sr-only" for="harness">Harness</label>
+        <select id="harness" x-model="harnessId" class="field flex-1" :disabled="isConnecting()">
+          <template x-for="h in harnesses" :key="h.id">
+            <option :value="h.id" x-text="h.name"></option>
+          </template>
+        </select>
+        <button type="button" class="btn-primary" @click="start" :disabled="isConnecting() || !harnessId" data-testid="connect">
+          <span x-text="isConnecting() ? 'Starting…' : 'Connect'"></span>
+        </button>
+        <button type="button" class="icon-btn" @click="refreshHarnesses" title="Reload harness list" aria-label="Reload harness list">↻</button>
+      </div>
+      <label class="sr-only" for="cwd">Working directory</label>
+      <input id="cwd" x-model="cwd" class="field mt-2 w-full font-mono text-xs" :placeholder="cwdPlaceholder()" spellcheck="false" />
+      <p class="mt-1 truncate text-xs text-slate-500" x-text="harnessDescription()"></p>
+      <p class="mt-1 text-xs text-rose-600" x-show="error" x-text="error" role="alert"></p>
+    </section>
+
+    <!-- Transcript -->
+    <main x-ref="scroller" class="flex-1 space-y-3 overflow-y-auto px-3 py-3" aria-live="polite">
+      <template x-if="!hasItems()">
+        <div class="mt-10 text-center text-sm text-slate-400">
+          <p class="text-2xl" aria-hidden="true">🛰️</p>
+          <p class="mt-2">Pick a harness and connect to start chatting.</p>
+          <p class="mt-1 text-xs">Your CLI agent runs locally with its own tools, skills and MCP servers.</p>
+        </div>
+      </template>
+
+      <template x-for="item in items" :key="item.id">
+        <div x-show="isVisible(item)">
+          <template x-if="item.type === 'user'">
+            <div class="flex justify-end">
+              <div class="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-indigo-600 px-3 py-2 text-sm text-white" x-text="item.text"></div>
+            </div>
+          </template>
+
+          <template x-if="item.type === 'agent'">
+            <div class="md max-w-full rounded-2xl rounded-bl-sm bg-slate-100 px-3 py-2 text-sm" x-markdown="item.text" data-testid="agent-msg"></div>
+          </template>
+
+          <template x-if="item.type === 'thought'">
+            <details class="rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-xs text-slate-500">
+              <summary class="cursor-pointer select-none">Thinking</summary>
+              <div class="md mt-1" x-markdown="item.text"></div>
+            </details>
+          </template>
+
+          <template x-if="item.type === 'tool'">
+            <div class="rounded-lg border border-slate-200 bg-white text-xs" data-testid="tool-card">
+              <div class="flex items-center gap-2 px-3 py-1.5">
+                <span aria-hidden="true">🔧</span>
+                <span class="min-w-0 flex-1 truncate font-medium" x-text="item.title" :title="item.title"></span>
+                <span class="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase" :class="toolStatusClass(item)" x-text="toolStatusLabel(item)"></span>
+              </div>
+              <p class="truncate border-t border-slate-100 px-3 py-1 font-mono text-[11px] text-slate-500" x-show="item.locations" x-text="item.locations" :title="item.locations"></p>
+              <!-- Output is visible by default (scrolls when long). -->
+              <pre class="max-h-48 overflow-auto whitespace-pre-wrap break-all border-t border-slate-100 bg-slate-50 px-3 py-2 font-mono text-[11px] text-slate-700" x-show="item.detail" x-text="item.detail" data-testid="tool-output"></pre>
+              <details class="border-t border-slate-100" x-show="item.input">
+                <summary class="cursor-pointer select-none px-3 py-1 text-[11px] text-slate-500">Input</summary>
+                <pre class="max-h-40 overflow-auto whitespace-pre-wrap break-all px-3 pb-2 font-mono text-[11px] text-slate-600" x-text="item.input"></pre>
+              </details>
+            </div>
+          </template>
+
+          <template x-if="item.type === 'plan'">
+            <div class="rounded-lg border border-slate-200 px-3 py-2 text-xs">
+              <p class="mb-1 font-semibold text-slate-600">Plan</p>
+              <ul class="space-y-0.5">
+                <template x-for="(entry, i) in item.entries" :key="i">
+                  <li class="flex gap-2" :class="planClass(entry)">
+                    <span aria-hidden="true" x-text="planMark(entry)"></span>
+                    <span x-text="entry.content"></span>
+                  </li>
+                </template>
+              </ul>
+            </div>
+          </template>
+
+          <template x-if="item.type === 'permission'">
+            <div class="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm" role="group" aria-label="Permission request">
+              <p class="font-medium text-amber-900">Permission requested</p>
+              <p class="mt-0.5 text-xs text-amber-800" x-text="item.title"></p>
+              <template x-if="!item.outcome">
+                <div class="mt-2 flex flex-wrap gap-2">
+                  <template x-for="opt in item.options" :key="opt.optionId">
+                    <button type="button" class="rounded-md px-2.5 py-1 text-xs font-medium" :class="optionClass(opt)" @click="choose(item, opt)" x-text="opt.name"></button>
+                  </template>
+                  <button type="button" class="rounded-md px-2.5 py-1 text-xs text-slate-500 hover:underline" @click="dismissPermission(item)">Cancel</button>
+                </div>
+              </template>
+              <template x-if="item.outcome">
+                <p class="mt-1 text-xs text-amber-900">→ <span x-text="item.outcome"></span></p>
+              </template>
+            </div>
+          </template>
+
+          <template x-if="item.type === 'system'">
+            <p class="text-center text-xs text-slate-400" x-text="item.text"></p>
+          </template>
+
+          <template x-if="item.type === 'error'">
+            <p class="rounded-md bg-rose-50 px-3 py-2 text-xs text-rose-700" role="alert" x-text="item.text"></p>
+          </template>
+        </div>
+      </template>
+    </main>
+
+    <!-- Logs drawer -->
+    <section x-show="showLogs" class="max-h-40 overflow-y-auto border-t border-slate-700 bg-slate-900 px-3 py-2 font-mono text-[11px]" aria-label="Harness logs">
+      <template x-for="(line, i) in logs" :key="i">
+        <div class="whitespace-pre-wrap" :class="logClass(line)" x-text="line.text"></div>
+      </template>
+      <p class="text-slate-500" x-show="!logs.length">No logs yet.</p>
+    </section>
+
+    <!-- Composer -->
+    <footer class="border-t border-slate-200 p-2">
+      <div class="flex items-end gap-2">
+        <label class="sr-only" for="prompt">Message</label>
+        <textarea id="prompt" x-ref="input" x-model="input" @keydown="onKeydown" rows="2"
+          class="field max-h-40 min-h-[2.75rem] flex-1 resize-y text-sm"
+          :placeholder="isConnected() ? 'Message the agent (Enter to send, Shift+Enter for newline)' : 'Connect to a harness first'"
+          :disabled="!isConnected()"></textarea>
+        <template x-if="!isBusy()">
+          <button type="button" class="btn-primary" @click="send" :disabled="!canSend()" data-testid="send">Send</button>
+        </template>
+        <template x-if="isBusy()">
+          <button type="button" class="btn-danger" @click="cancel">Stop</button>
+        </template>
+      </div>
+      <div class="mt-1 flex items-center justify-between text-[11px] text-slate-400">
+        <span x-text="commandHint()"></span>
+        <button type="button" class="hover:text-rose-600 hover:underline" x-show="isConnected()" @click="stop">Disconnect</button>
+      </div>
+    </footer>
+  </div>
+</body>
+</html>

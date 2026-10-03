@@ -1,0 +1,55 @@
+{
+  "defaultCwd": "~",
+  "harnesses": [
+    {
+      "id": "kiro",
+      "name": "Kiro CLI",
+      "description": "kiro-cli acp",
+      "command": "kiro-cli",
+      "args": ["acp"]
+    },
+    {
+      "id": "claude",
+      "name": "Claude Code",
+      "description": "ACP adapter for Claude Code (npx)",
+      "command": "npx",
+      "args": ["-y", "@agentclientprotocol/claude-agent-acp@0.85.1"]
+    },
+    {
+      "id": "codex",
+      "name": "Codex",
+      "description": "ACP adapter for OpenAI Codex (npx)",
+      "command": "npx",
+      "args": ["-y", "@agentclientprotocol/codex-acp@2.1.1"]
+    },
+    {
+      "id": "pi",
+      "name": "pi",
+      "description": "ACP adapter for the pi coding agent (npx)",
+      "command": "npx",
+      "args": ["-y", "pi-acp@0.0.34"]
+    },
+    {
+      "id": "kimi",
+      "name": "Kimi Code",
+      "description": "kimi acp (run `kimi` and /login first)",
+      "command": "kimi",
+      "args": ["acp"]
+    },
+    {
+      "id": "gemini",
+      "name": "Gemini CLI",
+      "description": "gemini --experimental-acp (flag name may differ by version)",
+      "command": "gemini",
+      "args": ["--experimental-acp"]
+    },
+    {
+      "id": "mock",
+      "name": "Mock agent (offline demo)",
+      "description": "Bundled fake ACP agent for testing the UI",
+      "command": "node",
+      "args": ["${configDir}/mock-agent.mjs"],
+      "cwd": "~"
+    }
+  ]
+}

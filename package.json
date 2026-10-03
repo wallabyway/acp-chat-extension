@@ -1,0 +1,21 @@
+{
+  "name": "acp-chat-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chrome extension chat panel that drives ACP (Agent Client Protocol) CLI harnesses via a native messaging host",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "watch:css": "tailwindcss -i extension/panel.src.css -o extension/dist/panel.css --watch",
+    "install-host": "bash host/install.sh",
+    "uninstall-host": "bash host/uninstall.sh"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@alpinejs/csp": "3.17.4",
+    "@tailwindcss/cli": "4.3.3",
+    "tailwindcss": "4.3.3"
+  }
+}
