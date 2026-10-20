@@ -406,6 +406,18 @@ chrome.runtime.onConnect.addListener((port) => {
   });
 });
 
+// ---------- after install/reload/update: replace orphaned panels ----------
+// Chrome doesn't re-run content scripts in open tabs, so tabs keep a dead
+// button/panel from the previous version. Re-inject into the declared sites;
+// content.js removes the stale UI and attaches a live one.
+chrome.runtime.onInstalled.addListener(async () => {
+  const matches = chrome.runtime.getManifest().content_scripts?.flatMap((c) => c.matches) ?? [];
+  const tabs = await chrome.tabs.query({ url: matches });
+  for (const tab of tabs) {
+    chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] }).catch(() => {});
+  }
+});
+
 // ---------- toolbar button: toggle the panel on any tab ----------
 
 chrome.action.onClicked.addListener(async (tab) => {

@@ -2,8 +2,18 @@
 // hosts the extension's panel.html in an iframe. The iframe runs in the
 // extension origin, so the page (and its CSP) can't read or script it.
 (() => {
-  if (window.__acpChatInjected) return;
-  window.__acpChatInjected = true;
+  const alive = () => {
+    try {
+      return !!chrome.runtime?.id;
+    } catch {
+      return false;
+    }
+  };
+  // A live instance already runs in this tab. A previous instance orphaned by
+  // an extension reload/update is replaced (its button and panel are removed).
+  if (window.__acpChatAlive?.()) return;
+  window.__acpChatAlive = alive;
+  document.querySelectorAll('#acp-chat-root').forEach((el) => el.remove());
 
   const SIZES = ['small', 'medium', 'large'];
   const DEFAULT_SIZE = 'medium';
@@ -92,7 +102,7 @@
 
   const toggle = () => (panel.hidden ? open() : close());
 
-  fab.addEventListener('click', open);
+  fab.addEventListener('click', () => (alive() ? open() : host.remove()));
 
   // Control messages come only from our own extension (panel iframe or the
   // toolbar button via the service worker), never from the host page.
@@ -120,4 +130,12 @@
 
   root.append(style, fab, panel);
   document.documentElement.appendChild(host);
+
+  // If the extension is reloaded/updated, this script is orphaned and every
+  // chrome.* call throws. Remove the stale UI; the new version re-injects itself.
+  const watchdog = setInterval(() => {
+    if (alive()) return;
+    clearInterval(watchdog);
+    host.remove();
+  }, 2000);
 })();

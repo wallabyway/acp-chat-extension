@@ -43,7 +43,9 @@
   ],
   "host_permissions": [
     "http://127.0.0.1/*",
-    "http://localhost/*"
+    "http://localhost/*",
+    "https://www.google.com/*",
+    "https://google.com/*"
   ],
   "optional_host_permissions": [
     "http://*/*",

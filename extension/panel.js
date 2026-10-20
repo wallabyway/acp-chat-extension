@@ -8,6 +8,14 @@ const SIZES = ['small', 'medium', 'large'];
 const SIZE_LABELS = { small: 'S', medium: 'M', large: 'L' };
 const embedded = window.parent !== window;
 
+function extensionAlive() {
+  try {
+    return !!chrome.runtime?.id;
+  } catch {
+    return false;
+  }
+}
+
 // Kept outside Alpine state: reactive proxies break native Chrome objects
 // ("Illegal invocation" when calling Port methods through a Proxy).
 let port = null;
@@ -72,18 +80,37 @@ Alpine.data('chat', () => ({
   },
 
   connect() {
-    port = chrome.runtime.connect({ name: 'acp-panel' });
+    // After the extension is reloaded/updated, this iframe is orphaned: every
+    // chrome.* call throws "Extension context invalidated". Stop and say so.
+    if (!extensionAlive()) return this.orphaned();
+    try {
+      port = chrome.runtime.connect({ name: 'acp-panel' });
+    } catch {
+      return this.orphaned();
+    }
     port.onMessage.addListener((msg) => this.onMessage(msg));
     // The service worker can be restarted by Chrome; reattach.
     port.onDisconnect.addListener(() => {
       port = null;
+      if (!extensionAlive()) return this.orphaned();
       setTimeout(() => this.connect(), 500);
     });
     this.post({ type: 'listHarnesses' });
   },
 
   post(msg) {
-    port?.postMessage(msg);
+    try {
+      port?.postMessage(msg);
+    } catch {
+      port = null;
+      if (!extensionAlive()) this.orphaned();
+    }
+  },
+
+  orphaned() {
+    port = null;
+    this.status = 'error';
+    this.error = 'ACP Chat was reloaded or updated. Reload this page to reconnect.';
   },
 
   onMessage(msg) {
