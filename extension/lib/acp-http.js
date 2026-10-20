@@ -17,13 +17,11 @@ export class HttpTransport {
   /**
    * @param {object} opts
    * @param {string} opts.url   base URL of the agent server, e.g. https://pool.example.com
-   * @param {string} [opts.key] bearer token
    * @param {(msg: object) => void} opts.onMessage
    * @param {(text: string) => void} [opts.onLog]
    */
-  constructor({ url, key, onMessage, onLog }) {
+  constructor({ url, onMessage, onLog }) {
     this.endpoint = `${String(url).replace(/\/+$/, '')}/acp`;
-    this.key = key || '';
     this.onMessage = onMessage;
     this.onLog = onLog ?? (() => {});
     this.inflight = new Set(); // AbortControllers
@@ -58,15 +56,10 @@ export class HttpTransport {
     };
     try {
       const headers = { 'content-type': 'application/json', accept: 'application/json, text/event-stream' };
-      if (this.key) headers.authorization = `Bearer ${this.key}`;
       const res = await fetch(this.endpoint, { method: 'POST', headers, body: JSON.stringify(msg), signal: ctrl.signal });
       if (res.status === 202) return;
       if (res.status === 401) {
-        throw new Error(
-          this.key
-            ? 'The server rejected the API key. Check the key field (it must match PIPOOL_API_KEYS on the server).'
-            : 'This server needs an API key. Enter it in the API key field (PIPOOL_API_KEYS on the server).',
-        );
+        throw new Error('The server requires client auth (PIPOOL_API_KEYS is set). Unset it on the server to connect.');
       }
       if (!res.ok) throw new Error(`HTTP ${res.status} ${(await res.text()).trim()}`.trim());
       if ((res.headers.get('content-type') ?? '').includes('text/event-stream')) {

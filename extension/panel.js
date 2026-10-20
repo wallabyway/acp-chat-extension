@@ -48,7 +48,6 @@ Alpine.data('chat', () => ({
   harnessId: '',
   cwd: '',
   remoteUrl: '',
-  remoteKey: '',
   remoteSession: '',
   items: [],
   commands: [],
@@ -158,12 +157,11 @@ Alpine.data('chat', () => ({
     this.fillRemote();
   },
 
-  // Copy the selected remote's saved URL/key/session into the form.
+  // Copy the selected remote's saved URL/session into the form.
   fillRemote() {
     const h = this.selectedHarness();
     if (!h?.remote) return;
     this.remoteUrl = h.url ?? '';
-    this.remoteKey = h.key ?? '';
     this.remoteSession = h.sessionId ?? '';
   },
   selectedHarness() {
@@ -259,7 +257,7 @@ Alpine.data('chat', () => ({
       this.post({ type: 'start', harnessId: this.harnessId, cwd: this.cwd });
       return;
     }
-    const msg = { type: 'start', harnessId: this.harnessId, url: this.remoteUrl.trim(), key: this.remoteKey, sessionId: this.remoteSession };
+    const msg = { type: 'start', harnessId: this.harnessId, url: this.remoteUrl.trim(), sessionId: this.remoteSession };
     let origin;
     try {
       origin = new URL(msg.url).origin;

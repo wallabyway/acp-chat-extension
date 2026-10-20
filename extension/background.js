@@ -21,7 +21,7 @@ let remoteTransport = null; // HttpTransport when connected to a remote (HTTP) a
 
 // Remote agents reached over ACP-over-HTTP (POST <url>/acp), no native host.
 // Edited from the panel and kept in chrome.storage.local.
-const DEFAULT_REMOTES = [{ id: 'pipool', name: 'pipool (remote)', url: 'http://127.0.0.1:18081', key: '', sessionId: '' }];
+const DEFAULT_REMOTES = [{ id: 'pipool', name: 'pipool (remote)', url: 'http://127.0.0.1:18081', sessionId: '' }];
 let remotes = DEFAULT_REMOTES;
 const remotesReady = chrome.storage.local.get('remotes').then((s) => {
   if (Array.isArray(s.remotes) && s.remotes.length) remotes = s.remotes;
@@ -34,7 +34,6 @@ function publishHarnesses() {
     description: `ACP over HTTP · ${r.url}`,
     remote: true,
     url: r.url,
-    key: r.key,
     sessionId: r.sessionId,
   }));
   harnesses = { ...nativeHarnesses, list: [...remoteList, ...nativeHarnesses.list] };
@@ -205,19 +204,18 @@ function sessionHandlers() {
 }
 
 /** Connect to a remote agent over ACP-over-HTTP; resume `sessionId` if given. */
-async function startRemote(remoteId, { url, key, sessionId }) {
+async function startRemote(remoteId, { url, sessionId }) {
   if (state.status === 'connecting') return;
   stopAgent(true);
   await remotesReady;
   const r = remotes.find((x) => x.id === remoteId);
   if (!r) return setState({ status: 'error', error: `Unknown remote "${remoteId}"` });
   url = (url || r.url || '').trim();
-  key = (key ?? r.key ?? '').trim();
   sessionId = (sessionId ?? '').trim();
   setState({ status: 'connecting', harnessId: remoteId, harnessName: r.name, error: null, agentInfo: null });
-  await saveRemote(remoteId, { url, key });
+  await saveRemote(remoteId, { url });
 
-  const transport = new HttpTransport({ url, key, onMessage: (m) => c.receive(m), onLog: (t) => log('http', t) });
+  const transport = new HttpTransport({ url, onMessage: (m) => c.receive(m), onLog: (t) => log('http', t) });
   const c = new AcpClient((m) => transport.send(m), sessionHandlers());
   remoteTransport = transport;
   client = c;
@@ -380,7 +378,7 @@ chrome.runtime.onConnect.addListener((port) => {
         const id = String(msg.harnessId ?? '');
         if (remotes.some((r) => r.id === id)) {
           const str = (v) => (typeof v === 'string' ? v : undefined);
-          startRemote(id, { url: str(msg.url), key: str(msg.key), sessionId: str(msg.sessionId) });
+          startRemote(id, { url: str(msg.url), sessionId: str(msg.sessionId) });
         } else {
           startAgent(id, typeof msg.cwd === 'string' ? msg.cwd.trim() : '');
         }

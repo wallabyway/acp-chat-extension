@@ -47,8 +47,6 @@
       <div x-show="isRemote()" class="mt-2 space-y-2">
         <label class="sr-only" for="remote-url">Server URL</label>
         <input id="remote-url" x-model="remoteUrl" class="field w-full font-mono text-xs" placeholder="https://your-pipool-host" spellcheck="false" />
-        <label class="sr-only" for="remote-key">API key</label>
-        <input id="remote-key" type="password" x-model="remoteKey" class="field w-full font-mono text-xs" placeholder="API key (Bearer)" autocomplete="off" />
         <div class="flex gap-2">
           <label class="sr-only" for="remote-session">Session id</label>
           <input id="remote-session" x-model="remoteSession" class="field flex-1 font-mono text-xs" placeholder="Session id (blank = new session)" spellcheck="false" />
