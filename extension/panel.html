@@ -32,7 +32,7 @@
     <section class="border-b border-slate-200 px-3 py-2" x-show="!isConnected()">
       <div class="flex gap-2">
         <label class="sr-only" for="harness">Harness</label>
-        <select id="harness" x-model="harnessId" class="field flex-1" :disabled="isConnecting()">
+        <select id="harness" x-model="harnessId" @change="fillRemote" class="field flex-1" :disabled="isConnecting()">
           <template x-for="h in harnesses" :key="h.id">
             <option :value="h.id" x-text="h.name"></option>
           </template>
@@ -43,7 +43,18 @@
         <button type="button" class="icon-btn" @click="refreshHarnesses" title="Reload harness list" aria-label="Reload harness list">↻</button>
       </div>
       <label class="sr-only" for="cwd">Working directory</label>
-      <input id="cwd" x-model="cwd" class="field mt-2 w-full font-mono text-xs" :placeholder="cwdPlaceholder()" spellcheck="false" />
+      <input id="cwd" x-model="cwd" x-show="isLocal()" class="field mt-2 w-full font-mono text-xs" :placeholder="cwdPlaceholder()" spellcheck="false" />
+      <div x-show="isRemote()" class="mt-2 space-y-2">
+        <label class="sr-only" for="remote-url">Server URL</label>
+        <input id="remote-url" x-model="remoteUrl" class="field w-full font-mono text-xs" placeholder="https://your-pipool-host" spellcheck="false" />
+        <label class="sr-only" for="remote-key">API key</label>
+        <input id="remote-key" type="password" x-model="remoteKey" class="field w-full font-mono text-xs" placeholder="API key (Bearer)" autocomplete="off" />
+        <div class="flex gap-2">
+          <label class="sr-only" for="remote-session">Session id</label>
+          <input id="remote-session" x-model="remoteSession" class="field flex-1 font-mono text-xs" placeholder="Session id (blank = new session)" spellcheck="false" />
+          <button type="button" class="icon-btn" @click="newRemoteSession" title="Start a new session instead of resuming" aria-label="New session">＋</button>
+        </div>
+      </div>
       <p class="mt-1 truncate text-xs text-slate-500" x-text="harnessDescription()"></p>
       <p class="mt-1 text-xs text-rose-600" x-show="error" x-text="error" role="alert"></p>
     </section>

@@ -4,6 +4,7 @@
 // connect with chrome.runtime.connect({ name: 'acp-panel' }).
 
 import { AcpClient } from './lib/acp-client.js';
+import { HttpTransport } from './lib/acp-http.js';
 import { Transcript } from './lib/transcript.js';
 
 const HOST_NAME = 'dev.acp_chat.host';
@@ -15,6 +16,42 @@ let client = null;
 let transcript = new Transcript();
 let logs = [];
 let harnesses = { list: [], configPath: null, defaultCwd: null };
+let nativeHarnesses = { list: [], configPath: null, defaultCwd: null };
+let remoteTransport = null; // HttpTransport when connected to a remote (HTTP) agent
+
+// Remote agents reached over ACP-over-HTTP (POST <url>/acp), no native host.
+// Edited from the panel and kept in chrome.storage.local.
+const DEFAULT_REMOTES = [{ id: 'pipool', name: 'pipool (remote)', url: 'http://127.0.0.1:18081', key: '', sessionId: '' }];
+let remotes = DEFAULT_REMOTES;
+const remotesReady = chrome.storage.local.get('remotes').then((s) => {
+  if (Array.isArray(s.remotes) && s.remotes.length) remotes = s.remotes;
+});
+
+function publishHarnesses() {
+  const remoteList = remotes.map((r) => ({
+    id: r.id,
+    name: r.name,
+    description: `ACP over HTTP · ${r.url}`,
+    remote: true,
+    url: r.url,
+    key: r.key,
+    sessionId: r.sessionId,
+  }));
+  harnesses = { ...nativeHarnesses, list: [...remoteList, ...nativeHarnesses.list] };
+  broadcast({ type: 'harnesses', harnesses });
+}
+
+async function saveRemote(id, patch) {
+  remotes = remotes.map((r) => (r.id === id ? { ...r, ...patch } : r));
+  await chrome.storage.local.set({ remotes });
+  publishHarnesses();
+}
+
+// MV3 stops idle service workers after ~30 s; extension API calls reset that
+// timer. Keep the worker alive while a remote request (e.g. a long turn) streams.
+setInterval(() => {
+  if (remoteTransport?.busy) chrome.runtime.getPlatformInfo();
+}, 20_000);
 const permissionWaiters = new Map(); // JSON-RPC id -> resolve
 const chunkBuffers = new Map(); // host chunk id -> string[]
 let startWaiter = null;
@@ -75,7 +112,11 @@ function ensurePort() {
   nativePort.onDisconnect.addListener(() => {
     const err = chrome.runtime.lastError?.message;
     nativePort = null;
-    onAgentGone(err ? hostMissingHint(err) : 'Native host disconnected');
+    const reason = err ? hostMissingHint(err) : 'Native host disconnected';
+    // A missing native host only matters when we are talking to a local harness.
+    if (remoteTransport) log('host', reason);
+    else if (client || startWaiter) onAgentGone(reason);
+    else log('host', reason);
   });
   return nativePort;
 }
@@ -97,8 +138,8 @@ function onHostMessage(msg) {
       log(msg.stream, msg.text);
       break;
     case 'harnesses':
-      harnesses = { list: msg.harnesses, configPath: msg.configPath, defaultCwd: msg.defaultCwd };
-      broadcast({ type: 'harnesses', harnesses });
+      nativeHarnesses = { list: msg.harnesses, configPath: msg.configPath, defaultCwd: msg.defaultCwd };
+      publishHarnesses();
       break;
     case 'started':
       agentPid = msg.pid;
@@ -136,6 +177,8 @@ function onAgentGone(reason, informational = false) {
   const hadAgent = !!client;
   client?.failAll(reason);
   client = null;
+  remoteTransport?.close();
+  remoteTransport = null;
   resolveAllPermissions();
   if (hadAgent || !informational) {
     emitItems(informational ? transcript.addSystem(reason) : transcript.addError(reason));
@@ -144,6 +187,76 @@ function onAgentGone(reason, informational = false) {
 }
 
 // ---------- ACP lifecycle ----------
+
+function sessionHandlers() {
+  return {
+    onSessionUpdate: ({ update }) => {
+      emitItems(transcript.apply(update));
+      if (update?.sessionUpdate === 'available_commands_update' || update?.sessionUpdate === 'current_mode_update') {
+        broadcast({ type: 'state', state, commands: transcript.commands });
+      }
+    },
+    onRequestPermission: (params, requestId) =>
+      new Promise((resolve) => {
+        permissionWaiters.set(requestId, resolve);
+        emitItems(transcript.addPermission(requestId, params));
+      }),
+  };
+}
+
+/** Connect to a remote agent over ACP-over-HTTP; resume `sessionId` if given. */
+async function startRemote(remoteId, { url, key, sessionId }) {
+  if (state.status === 'connecting') return;
+  stopAgent(true);
+  await remotesReady;
+  const r = remotes.find((x) => x.id === remoteId);
+  if (!r) return setState({ status: 'error', error: `Unknown remote "${remoteId}"` });
+  url = (url || r.url || '').trim();
+  key = (key ?? r.key ?? '').trim();
+  sessionId = (sessionId ?? '').trim();
+  setState({ status: 'connecting', harnessId: remoteId, harnessName: r.name, error: null, agentInfo: null });
+  await saveRemote(remoteId, { url, key });
+
+  const transport = new HttpTransport({ url, key, onMessage: (m) => c.receive(m), onLog: (t) => log('http', t) });
+  const c = new AcpClient((m) => transport.send(m), sessionHandlers());
+  remoteTransport = transport;
+  client = c;
+  try {
+    const init = await c.initialize();
+    let id = null;
+    if (sessionId && init?.agentCapabilities?.loadSession) {
+      // Replay the saved conversation into a fresh transcript.
+      const previous = transcript;
+      transcript = new Transcript();
+      broadcast({ type: 'snapshot', state, items: transcript.items, harnesses, logs, commands: transcript.commands });
+      try {
+        await c.request('session/load', { sessionId, cwd: '/', mcpServers: [] });
+        id = sessionId;
+        emitItems(transcript.addSystem(`Resumed session ${sessionId}`));
+      } catch (err) {
+        transcript = previous;
+        broadcast({ type: 'snapshot', state, items: transcript.items, harnesses, logs, commands: transcript.commands });
+        emitItems(transcript.addSystem(`Could not resume ${sessionId} (${err.message}); starting a new session.`));
+      }
+    }
+    if (!id) {
+      id = (await c.newSession('/')).sessionId;
+      emitItems(transcript.addSystem(`New session ${id}`));
+    }
+    if (client !== c) return; // stopped meanwhile
+    await saveRemote(remoteId, { sessionId: id });
+    emitItems(transcript.addSystem(`Connected to ${init?.agentInfo?.title ?? r.name} · ${url}`));
+    setState({ status: 'ready', agentInfo: init?.agentInfo ?? null, sessionId: id, cwd: `${url} · ${id}` });
+  } catch (err) {
+    if (client === c) {
+      client = null;
+      remoteTransport = null;
+    }
+    transport.close();
+    emitItems(transcript.addError(err.message));
+    setState({ status: 'error', error: err.message, sessionId: null });
+  }
+}
 
 async function startAgent(harnessId, cwd) {
   if (state.status === 'connecting') return;
@@ -157,19 +270,7 @@ async function startAgent(harnessId, cwd) {
     port.postMessage({ type: 'start', harnessId });
     const info = await started;
 
-    client = new AcpClient((message) => nativePort?.postMessage({ type: 'send', message }), {
-      onSessionUpdate: ({ update }) => {
-        emitItems(transcript.apply(update));
-        if (update?.sessionUpdate === 'available_commands_update' || update?.sessionUpdate === 'current_mode_update') {
-          broadcast({ type: 'state', state, commands: transcript.commands });
-        }
-      },
-      onRequestPermission: (params, requestId) =>
-        new Promise((resolve) => {
-          permissionWaiters.set(requestId, resolve);
-          emitItems(transcript.addPermission(requestId, params));
-        }),
-    });
+    client = new AcpClient((message) => nativePort?.postMessage({ type: 'send', message }), sessionHandlers());
 
     const init = await client.initialize();
     const sessionCwd = cwd || info.cwd;
@@ -202,10 +303,13 @@ function stopAgent(silent = false) {
   if (!client && !nativePort) return;
   resolveAllPermissions();
   const c = client;
+  const remote = remoteTransport;
   client = null;
+  remoteTransport = null;
   agentPid = null;
   c?.failAll('Stopped');
-  nativePort?.postMessage({ type: 'stop' });
+  if (remote) remote.close();
+  else nativePort?.postMessage({ type: 'stop' });
   if (!silent && c) emitItems(transcript.addSystem('Agent stopped'));
   setState({ status: 'disconnected', sessionId: null });
 }
@@ -265,15 +369,23 @@ chrome.runtime.onConnect.addListener((port) => {
   port.onMessage.addListener((msg) => {
     switch (msg?.type) {
       case 'listHarnesses':
+        remotesReady.then(publishHarnesses);
         try {
           ensurePort().postMessage({ type: 'list' });
         } catch (err) {
-          setState({ status: 'error', error: err.message });
+          log('host', err.message); // remote agents still work without the native host
         }
         break;
-      case 'start':
-        startAgent(String(msg.harnessId ?? ''), typeof msg.cwd === 'string' ? msg.cwd.trim() : '');
+      case 'start': {
+        const id = String(msg.harnessId ?? '');
+        if (remotes.some((r) => r.id === id)) {
+          const str = (v) => (typeof v === 'string' ? v : undefined);
+          startRemote(id, { url: str(msg.url), key: str(msg.key), sessionId: str(msg.sessionId) });
+        } else {
+          startAgent(id, typeof msg.cwd === 'string' ? msg.cwd.trim() : '');
+        }
         break;
+      }
       case 'stop':
         stopAgent();
         break;

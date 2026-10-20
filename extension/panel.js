@@ -39,6 +39,9 @@ Alpine.data('chat', () => ({
   configPath: '',
   harnessId: '',
   cwd: '',
+  remoteUrl: '',
+  remoteKey: '',
+  remoteSession: '',
   items: [],
   commands: [],
   logs: [],
@@ -125,6 +128,28 @@ Alpine.data('chat', () => ({
     this.harnesses = h.list;
     this.configPath = h.configPath ?? '';
     if (!this.harnesses.some((x) => x.id === this.harnessId)) this.harnessId = this.harnesses[0].id;
+    this.fillRemote();
+  },
+
+  // Copy the selected remote's saved URL/key/session into the form.
+  fillRemote() {
+    const h = this.selectedHarness();
+    if (!h?.remote) return;
+    this.remoteUrl = h.url ?? '';
+    this.remoteKey = h.key ?? '';
+    this.remoteSession = h.sessionId ?? '';
+  },
+  selectedHarness() {
+    return this.harnesses.find((x) => x.id === this.harnessId);
+  },
+  isRemote() {
+    return !!this.selectedHarness()?.remote;
+  },
+  isLocal() {
+    return !this.isRemote();
+  },
+  newRemoteSession() {
+    this.remoteSession = '';
   },
 
   // ---------- derived state (methods keep CSP expressions simple) ----------
@@ -203,7 +228,24 @@ Alpine.data('chat', () => ({
 
   start() {
     chrome.storage.local.set({ harnessId: this.harnessId, cwd: this.cwd });
-    this.post({ type: 'start', harnessId: this.harnessId, cwd: this.cwd });
+    if (!this.isRemote()) {
+      this.post({ type: 'start', harnessId: this.harnessId, cwd: this.cwd });
+      return;
+    }
+    const msg = { type: 'start', harnessId: this.harnessId, url: this.remoteUrl.trim(), key: this.remoteKey, sessionId: this.remoteSession };
+    let origin;
+    try {
+      origin = new URL(msg.url).origin;
+    } catch {
+      this.error = 'Enter a valid http(s) URL';
+      return;
+    }
+    // Host access lets the service worker call the server without CORS. Must be
+    // requested from this click (a user gesture); already-granted origins don't prompt.
+    chrome.permissions.request({ origins: [`${origin}/*`] }).then(
+      (granted) => (granted ? this.post(msg) : (this.error = `Access to ${origin} was not granted`)),
+      (err) => (this.error = err.message),
+    );
   },
   stop() {
     this.post({ type: 'stop' });
