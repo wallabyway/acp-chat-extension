@@ -61,6 +61,13 @@ export class HttpTransport {
       if (this.key) headers.authorization = `Bearer ${this.key}`;
       const res = await fetch(this.endpoint, { method: 'POST', headers, body: JSON.stringify(msg), signal: ctrl.signal });
       if (res.status === 202) return;
+      if (res.status === 401) {
+        throw new Error(
+          this.key
+            ? 'The server rejected the API key. Check the key field (it must match PIPOOL_API_KEYS on the server).'
+            : 'This server needs an API key. Enter it in the API key field (PIPOOL_API_KEYS on the server).',
+        );
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status} ${(await res.text()).trim()}`.trim());
       if ((res.headers.get('content-type') ?? '').includes('text/event-stream')) {
         await readSse(res.body, deliver);
