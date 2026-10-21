@@ -92,6 +92,7 @@ Log in to each CLI in a normal terminal first; ACP sessions reuse that login. `i
 Pick **pipool (remote)** in the harness list and fill in the server URL and (optionally) a session id. No key is entered in the browser: the model key lives only on the server. The service worker then talks ACP directly to `POST <url>/acp` (JSON-RPC per POST, streamed back as SSE; see [pipool](https://github.com/wallabyway/piPool)). Nothing needs to be installed except the extension, so any computer can join.
 
 - Blank session id → `session/new` (a fresh agent). The id is saved; **Connect** again resumes it with `session/load`. Paste the same id on another computer to continue the conversation there. **＋** clears it for a new session.
+- Turns the agent runs on its own — `schedule.json` timers and webhooks (`POST <url>/acp/hook/<sessionId>`) — stream into the open panel live (the service worker holds `GET <url>/acp?sessionId=…`).
 - Chrome asks for host access to the server's origin on first connect (`127.0.0.1`/`localhost` are pre-granted).
 - `node test/remote-acp.mjs http://127.0.0.1:18081` runs an end-to-end check of the client against a live server.
 

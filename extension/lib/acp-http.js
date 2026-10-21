@@ -8,6 +8,10 @@
 //                       notifications, then the response for this request id
 //                       (session/prompt, session/load)
 //
+// `listen(sessionId)` additionally holds `GET <url>/acp?sessionId=…` open: the
+// server pushes turns nobody prompted (schedules, webhooks) as notifications.
+// It reconnects with backoff until close().
+//
 // Every message received is handed to `onMessage`, so AcpClient sees the same
 // stream it would get from a stdio harness. If a request fails at the HTTP
 // level, or its stream ends without a response, a JSON-RPC error response is
@@ -26,10 +30,40 @@ export class HttpTransport {
     this.onLog = onLog ?? (() => {});
     this.inflight = new Set(); // AbortControllers
     this.closed = false;
+    this.listening = false;
   }
 
   get busy() {
     return this.inflight.size > 0;
+  }
+
+  /** Hold the session's push stream open (background turns). */
+  async listen(sessionId) {
+    if (this.listening) return;
+    this.listening = true;
+    const url = `${this.endpoint}?sessionId=${encodeURIComponent(sessionId)}`;
+    let delay = 1000;
+    while (!this.closed) {
+      const ctrl = new AbortController();
+      this.listenCtrl = ctrl;
+      try {
+        const res = await fetch(url, { headers: { accept: 'text/event-stream' }, signal: ctrl.signal });
+        if (res.status === 404) {
+          this.onLog('push stream: session no longer exists');
+          break;
+        }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        delay = 1000;
+        await readSse(res.body, (m) => !this.closed && this.onMessage(m));
+      } catch (err) {
+        if (this.closed) break;
+        this.onLog(`push stream dropped (${err.message}); retrying in ${delay / 1000}s`);
+      }
+      if (this.closed) break;
+      await new Promise((r) => setTimeout(r, delay));
+      delay = Math.min(delay * 2, 30_000);
+    }
+    this.listening = false;
   }
 
   send(msg) {
@@ -42,6 +76,7 @@ export class HttpTransport {
 
   close() {
     this.closed = true;
+    this.listenCtrl?.abort();
     for (const c of this.inflight) c.abort();
     this.inflight.clear();
   }

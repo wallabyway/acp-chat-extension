@@ -49,7 +49,7 @@ async function saveRemote(id, patch) {
 // MV3 stops idle service workers after ~30 s; extension API calls reset that
 // timer. Keep the worker alive while a remote request (e.g. a long turn) streams.
 setInterval(() => {
-  if (remoteTransport?.busy) chrome.runtime.getPlatformInfo();
+  if (remoteTransport?.busy || remoteTransport?.listening) chrome.runtime.getPlatformInfo();
 }, 20_000);
 const permissionWaiters = new Map(); // JSON-RPC id -> resolve
 const chunkBuffers = new Map(); // host chunk id -> string[]
@@ -216,7 +216,14 @@ async function startRemote(remoteId, { url, sessionId }) {
   await saveRemote(remoteId, { url });
 
   const transport = new HttpTransport({ url, onMessage: (m) => c.receive(m), onLog: (t) => log('http', t) });
-  const c = new AcpClient((m) => transport.send(m), sessionHandlers());
+  const c = new AcpClient((m) => transport.send(m), {
+    ...sessionHandlers(),
+    // Background turns (schedule / webhook) pushed on the session stream.
+    onExtNotification: (method, params) => {
+      if (method !== '_pipool/turn_end') return;
+      if (params?.error) emitItems(transcript.addError(`Background turn failed: ${params.error}`));
+    },
+  });
   remoteTransport = transport;
   client = c;
   try {
@@ -243,6 +250,7 @@ async function startRemote(remoteId, { url, sessionId }) {
     }
     if (client !== c) return; // stopped meanwhile
     await saveRemote(remoteId, { sessionId: id });
+    transport.listen(id);
     emitItems(transcript.addSystem(`Connected to ${init?.agentInfo?.title ?? r.name} · ${url}`));
     setState({ status: 'ready', agentInfo: init?.agentInfo ?? null, sessionId: id, cwd: `${url} · ${id}` });
   } catch (err) {
